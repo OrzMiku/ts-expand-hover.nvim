@@ -56,6 +56,8 @@ describe("float", function()
     stubs.nvim_create_autocmd   = stub(vim.api, "nvim_create_autocmd").returns(1)
     stubs.nvim_del_augroup_by_name = stub(vim.api, "nvim_del_augroup_by_name")
     stubs.nvim_win_set_cursor      = stub(vim.api, "nvim_win_set_cursor")
+    -- Drawn rows as the window reports them; tests about height re-stub this.
+    stubs.nvim_win_text_height     = stub(vim.api, "nvim_win_text_height").returns({ all = 20 })
 
     -- NeoVim 0.10+ uses nvim_set_option_value for vim.bo/vim.wo.
     -- Stub it so property assignments don't hit real API with fake buffer IDs.
@@ -132,6 +134,36 @@ describe("float", function()
       assert.is_true(win_cfg.width <= 40)
     end)
 
+    it("hides the markdown fences: conceallevel 2 and concealcursor n on the float window (HOVR-02)", function()
+      local float = fresh_float()
+      local state = new_state()
+
+      float.show(SUCCESS_HOVER, state)
+
+      -- vim.wo[win].x = v goes through nvim_set_option_value(name, value, { win = win }).
+      local set = {}
+      for _, c in ipairs(stubs.nvim_set_option_value.calls) do
+        local opts = c.vals[3] or {}
+        if opts.win == 100 then set[c.vals[1]] = c.vals[2] end
+      end
+      assert.equals(2,   set.conceallevel)
+      assert.equals("n", set.concealcursor)
+    end)
+
+    it("sizes the float to the drawn rows, not the raw line count", function()
+      stubs.nvim_win_text_height:revert()
+      -- Three raw lines, two of them concealed fences: the window draws one row.
+      stubs.nvim_win_text_height = stub(vim.api, "nvim_win_text_height").returns({ all = 1 })
+      local float = fresh_float()
+      local state = new_state()
+
+      float.show(SUCCESS_HOVER, state)
+
+      local set_config_call = stubs.nvim_win_set_config.calls[1]
+      assert.equals(100, set_config_call.vals[1])
+      assert.equals(1, set_config_call.vals[2].height)
+    end)
+
     it("respects max_height from config (HOVR-05)", function()
       config.setup({ float = { max_height = 5 } })
       local float = fresh_float()
@@ -142,9 +174,10 @@ describe("float", function()
       for i = 1, 20 do lines[i] = "line " .. i end
       float.show({ lines = lines }, state)
 
-      local call_args = stubs.nvim_open_win.calls[1]
-      local win_cfg = call_args.vals[3]
-      assert.is_true(win_cfg.height <= 5)
+      local open_cfg = stubs.nvim_open_win.calls[1].vals[3]
+      assert.is_true(open_cfg.height <= 5)
+      local final_cfg = stubs.nvim_win_set_config.calls[1].vals[2]
+      assert.is_true(final_cfg.height <= 5)
     end)
 
     it("displays footer with depth and key hints (EXPN-04)", function()

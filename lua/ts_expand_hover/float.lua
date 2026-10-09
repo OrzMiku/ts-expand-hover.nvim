@@ -85,13 +85,12 @@ local function _max_line_width(lines)
   return max
 end
 
---- Compute window width/height and the best footer variant for available width.
+--- Compute window width and the best footer variant for available width.
 --- Prefers the most descriptive footer that fits while respecting max_width.
 ---@param lines string[]
 ---@param state table
 ---@param cfg table
 ---@return integer width
----@return integer height
 ---@return string footer_text
 local function _compute_layout(lines, state, cfg)
   local content_width = _max_line_width(lines)
@@ -115,21 +114,38 @@ local function _compute_layout(lines, state, cfg)
     chosen_footer = _truncate_to_width(chosen_footer, width)
   end
 
-  local height = math.min(cfg.max_height, #lines)
-  return width, height, chosen_footer
+  return width, chosen_footer
+end
+
+--- Return the float height for its current content.
+--- The markdown fence lines are concealed, so the raw line count overshoots
+--- the rows the window really draws. The window itself knows the drawn rows.
+---@param win integer
+---@param cfg table
+---@return integer
+local function _fit_height(win, cfg)
+  local drawn_rows = vim.api.nvim_win_text_height(win, {}).all
+  return math.min(cfg.max_height, drawn_rows)
+end
+
+--- Hide the markdown fence lines and the language label.
+--- The runtime markdown highlight query conceals them, but only when the
+--- window has conceallevel 2. The float is focused in normal mode, so without
+--- "n" in concealcursor the cursor line would show its raw fence again.
+---@param win integer
+local function _apply_conceal(win)
+  vim.wo[win].conceallevel  = 2
+  vim.wo[win].concealcursor = "n"
 end
 
 --- Open a new focused floating window with the given content.
 ---@param lines string[]
 ---@param footer_text string
 ---@param width integer
----@param height integer
 ---@param state table
 ---@param cfg table float config (border, max_width, max_height)
----@param on_expand function|nil callback for + keymap
----@param on_collapse function|nil callback for - keymap
 ---@return integer win, integer buf
-local function _open(lines, footer_text, width, height, state, cfg, on_expand, on_collapse)
+local function _open(lines, footer_text, width, state, cfg)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype   = "nofile"
   vim.bo[buf].bufhidden = "wipe"
@@ -143,7 +159,7 @@ local function _open(lines, footer_text, width, height, state, cfg, on_expand, o
   local win = vim.api.nvim_open_win(buf, true, {
     relative   = "cursor",
     width      = width,
-    height     = height,
+    height     = math.min(cfg.max_height, #lines),
     row        = 1,
     col        = 0,
     style      = "minimal",
@@ -154,6 +170,13 @@ local function _open(lines, footer_text, width, height, state, cfg, on_expand, o
   })
 
   vim.wo[win].wrap = false
+  _apply_conceal(win)
+
+  -- The drawn rows are known only once the window conceals, so the height
+  -- is set after opening. Read-then-write keeps relative and footer_pos.
+  local existing = vim.api.nvim_win_get_config(win)
+  existing.height = _fit_height(win, cfg)
+  vim.api.nvim_win_set_config(win, existing)
 
   state.float_bufnr = buf
   state.float_winid = win
@@ -166,9 +189,9 @@ end
 ---@param lines string[]
 ---@param footer_text string
 ---@param width integer
----@param height integer
 ---@param state table
-local function _update(lines, footer_text, width, height, state)
+---@param cfg table
+local function _update(lines, footer_text, width, state, cfg)
   local buf = state.float_bufnr
   local win = state.float_winid
 
@@ -183,7 +206,7 @@ local function _update(lines, footer_text, width, height, state)
   -- Read existing config first so relative, footer_pos, etc. are preserved.
   local existing = vim.api.nvim_win_get_config(win)
   existing.width  = width
-  existing.height = height
+  existing.height = _fit_height(win, cfg)
   existing.footer = { { footer_text, "FloatFooter" } }
   vim.api.nvim_win_set_config(win, existing)
 
@@ -270,14 +293,14 @@ function M.show(hover, state, on_expand, on_collapse)
   -- needing a reference to the hover table.
   state.can_expand = hover.can_expand
 
-  local width, height, footer = _compute_layout(lines, state, cfg)
+  local width, footer = _compute_layout(lines, state, cfg)
 
   if state.float_winid and vim.api.nvim_win_is_valid(state.float_winid) then
-    _update(lines, footer, width, height, state)
+    _update(lines, footer, width, state, cfg)
   else
     -- Capture source window before focus moves into the float.
     state.source_winid = vim.api.nvim_get_current_win()
-    local win, buf = _open(lines, footer, width, height, state, cfg, on_expand, on_collapse)
+    local win, buf = _open(lines, footer, width, state, cfg)
     _setup_close_autocmds(win, state.source_bufnr, state)
     _setup_keymaps(buf, state, on_expand, on_collapse)
   end
