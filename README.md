@@ -8,7 +8,7 @@ Expandable TypeScript type inspection for NeoVim. Uses TypeScript's `verbosityLe
 
 - **Progressive type expansion** — press `+` (or `=`, no shift needed) to expand type aliases one level at a time, `-` to collapse
 - **In-place float updates** — content updates without closing or repositioning the float
-- **Treesitter highlighting** — TypeScript code fences are syntax-highlighted via treesitter markdown injection
+- **Treesitter highlighting** — TypeScript code fences are syntax-highlighted via treesitter markdown injection, with the fence lines hidden and long lines wrapped between words
 - **Documentation and JSDoc** — documentation text and `@param`/`@returns`/`@example` tags rendered below the type block
 - **Configurable keymaps and float** — override or disable any keymap; customize border, max width, max height
 - **Graceful fallback** — falls back to `vim.lsp.buf.hover()` when no supported server is attached or the server cannot answer
@@ -100,9 +100,10 @@ vim.api.nvim_create_autocmd("FileType", {
 | `K` | Normal mode (global) | Open hover float at cursor |
 | `+` / `=` | Inside float | Expand type one level |
 | `-` | Inside float | Collapse type one level |
+| `j` / `k` | Inside float | Move down and up, skipping the hidden code fence lines |
 | `q` / `Esc` | Inside float | Close float, return focus to source |
 
-The float closes automatically when you move the cursor in the source buffer. The footer shows the current verbosity depth and available actions. When maximum expansion is reached, the footer shows `[max]`.
+The float closes automatically when you move the cursor in the source buffer. The hint row at the bottom of the float shows the current verbosity depth and the available actions. When maximum expansion is reached, the hint row shows `[max]`.
 
 ## Health check
 
@@ -130,11 +131,11 @@ When no supported server is attached, or the server answers with an error (TypeS
 
 **Hover shows the standard LSP float** — no supported server is attached. Run `:checkhealth ts_expand_hover` and make sure your LSP config starts vtsls or the TypeScript 7 server (`tsc`) for TypeScript files.
 
-**Pressing + does nothing** — the footer shows `[max]` (fully expanded), TypeScript < 5.9 is in use with vtsls, or the TypeScript 7 server was started without the `experimental.hoverVerbosityLevel` capability (see [TypeScript 7 setup](#typescript-7-setup)).
+**Pressing + does nothing** — the hint row shows `[max]` (fully expanded), TypeScript < 5.9 is in use with vtsls, or the TypeScript 7 server was started without the `experimental.hoverVerbosityLevel` capability (see [TypeScript 7 setup](#typescript-7-setup)).
 
 **Type ends with `... N more ...`** — the TypeScript 7 server cuts long types at `maximumHoverLength` (500 by default). Raise it in the server settings (see [TypeScript 7 setup](#typescript-7-setup)).
 
-**Float doesn't open** — NeoVim < 0.10 is required for the `footer` option in `nvim_open_win`. Also verify `setup()` was called.
+**Float doesn't open** — NeoVim 0.10 or newer is required. Also verify `setup()` was called.
 
 **K is already bound** — use a custom hover key (e.g. `hover = "<leader>th"`) or disable the global mapping and remap per-filetype (see Configuration above).
 

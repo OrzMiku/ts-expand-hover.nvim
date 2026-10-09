@@ -155,6 +155,7 @@ Default keymaps (all configurable via setup()):
   K           global       Open TypeScript hover float at cursor
   +, =        float-local  Expand type (increase verbosity level)
   -           float-local  Collapse type (decrease verbosity level)
+  j, k        float-local  Move down and up, skipping the hidden fence lines
   q, <Esc>    float-local  Close the hover float
 
 `K` is registered as a global normal-mode mapping when `setup()` is called.

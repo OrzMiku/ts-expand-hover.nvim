@@ -28,10 +28,10 @@ local function _truncate_to_width(text, max_width)
   return ""
 end
 
---- Build footer variants ordered from most to least descriptive.
+--- Build hint row variants ordered from most to least descriptive.
 ---@param state table Session state with verbosity and can_expand fields
 ---@return string[]
-local function _build_footer_variants(state)
+local function _build_hint_variants(state)
   local can_expand = state.can_expand
   local at_min     = state.verbosity == 0
 
@@ -50,18 +50,85 @@ local function _build_footer_variants(state)
   end
 
   local full = string.format(
-    "depth: %d  %s  %s  [q] close",
+    " depth: %d  %s  %s  [q] close",
     state.verbosity,
     expand_full,
     collapse_full
   )
   local medium = string.format(
-    "d:%d  %s  [-]  [q]",
+    " d:%d  %s  [-]  [q]",
     state.verbosity,
     can_expand and "[+]" or "[max]"
   )
-  local minimal = string.format("d:%d", state.verbosity)
+  local minimal = string.format(" d:%d", state.verbosity)
   return { full, medium, minimal }
+end
+
+--- The markdown highlight query hides fence lines, so the cursor never belongs on one.
+---@param line string
+---@return boolean
+local function _is_fence(line)
+  return line:match("^%s*```") ~= nil
+end
+
+--- Content gets one column of padding on the left, like the noice hover does.
+---@param lines string[]
+---@return string[]
+local function _pad(lines)
+  local padded = {}
+  for i, line in ipairs(lines) do
+    if line == "" then
+      padded[i] = ""
+    else
+      padded[i] = " " .. line
+    end
+  end
+  return padded
+end
+
+--- Index of the next line in direction dir (1 or -1) that is not a fence, or nil at the edge.
+---@param lines string[]
+---@param from integer
+---@param dir integer
+---@return integer|nil
+local function _next_visible_line(lines, from, dir)
+  local i = from + dir
+  while lines[i] and _is_fence(lines[i]) do
+    i = i + dir
+  end
+  if lines[i] then return i end
+  return nil
+end
+
+--- Cursor position for freshly written content: the first visible line, on its first character.
+---@param lines string[]
+---@return integer[]
+local function _start_cursor(lines)
+  local row = _next_visible_line(lines, 0, 1) or 1
+  return { row, 1 }
+end
+
+local HINT_NS = vim.api.nvim_create_namespace("ts_expand_hover_hints")
+
+--- Draw the hint row as the last two rows inside the float, like the action
+--- row at the bottom of the VS Code hover: a separator line in the border
+--- colour, then the hints in the comment colour. Virtual lines are not buffer
+--- text, so the markdown parser and the cursor never touch them. They hang
+--- off the last visible line: a concealed fence line takes its virtual lines
+--- down with it.
+---@param bufnr integer
+---@param lines string[]
+---@param width integer
+---@param hint_text string
+local function _write_hints(bufnr, lines, width, hint_text)
+  local last_visible = _next_visible_line(lines, #lines + 1, -1) or #lines
+  vim.api.nvim_buf_clear_namespace(bufnr, HINT_NS, 0, -1)
+  vim.api.nvim_buf_set_extmark(bufnr, HINT_NS, last_visible - 1, 0, {
+    virt_lines = {
+      { { string.rep("─", width), "FloatBorder" } },
+      { { hint_text, "Comment" } },
+    },
+  })
 end
 
 --- Apply treesitter markdown highlighting to the given buffer.
@@ -85,47 +152,52 @@ local function _max_line_width(lines)
   return max
 end
 
---- Compute window width and the best footer variant for available width.
---- Prefers the most descriptive footer that fits while respecting max_width.
+--- Compute window width and the best hint row variant for it.
+--- The window is as wide as the content up to max_width, plus one column so
+--- unwrapped lines do not touch the right border. The most descriptive hint
+--- row that fits in max_width wins, widening the window when the content is narrower.
 ---@param lines string[]
 ---@param state table
 ---@param cfg table
 ---@return integer width
----@return string footer_text
+---@return string hint_text
 local function _compute_layout(lines, state, cfg)
-  local content_width = _max_line_width(lines)
   local max_width = math.max(1, cfg.max_width)
-  local variants = _build_footer_variants(state)
+  local width = math.min(max_width, _max_line_width(lines) + 1)
+  local variants = _build_hint_variants(state)
 
-  -- Default to minimal footer when only max-width constrained content fits.
-  local chosen_footer = variants[#variants]
-  local width = math.min(max_width, math.max(content_width, _display_width(chosen_footer)))
-
-  for _, footer in ipairs(variants) do
-    local needed_width = math.max(content_width, _display_width(footer))
-    if needed_width <= max_width then
-      chosen_footer = footer
-      width = needed_width
+  local chosen_hint = variants[#variants]
+  for _, hint in ipairs(variants) do
+    if _display_width(hint) + 1 <= max_width then
+      chosen_hint = hint
+      width = math.max(width, _display_width(hint) + 1)
       break
     end
   end
 
-  if _display_width(chosen_footer) > width then
-    chosen_footer = _truncate_to_width(chosen_footer, width)
+  if _display_width(chosen_hint) > width then
+    chosen_hint = _truncate_to_width(chosen_hint, width)
   end
 
-  return width, chosen_footer
+  return width, chosen_hint
 end
 
---- Return the float height for its current content.
---- The markdown fence lines are concealed, so the raw line count overshoots
---- the rows the window really draws. The window itself knows the drawn rows.
+--- Apply the width, then the height the content needs at that width.
+--- Fence lines are concealed, long lines wrap and the hint rows are virtual,
+--- so the raw line count is wrong in every direction. The window itself
+--- reports the drawn rows, but only once it has its final width, hence two
+--- writes. Read-then-write keeps relative and the other fields (NeoVim #31992).
 ---@param win integer
+---@param width integer
 ---@param cfg table
----@return integer
-local function _fit_height(win, cfg)
+local function _fit_window(win, width, cfg)
+  local existing = vim.api.nvim_win_get_config(win)
+  existing.width  = width
+  vim.api.nvim_win_set_config(win, existing)
+
   local drawn_rows = vim.api.nvim_win_text_height(win, {}).all
-  return math.min(cfg.max_height, drawn_rows)
+  existing.height = math.min(cfg.max_height, drawn_rows)
+  vim.api.nvim_win_set_config(win, existing)
 end
 
 --- Hide the markdown fence lines and the language label.
@@ -138,14 +210,24 @@ local function _apply_conceal(win)
   vim.wo[win].concealcursor = "n"
 end
 
+--- Long lines wrap like in the built-in hover. linebreak wraps between words
+--- instead of inside one, and breakindent keeps the wrapped part under the
+--- one column of padding.
+---@param win integer
+local function _apply_wrap(win)
+  vim.wo[win].wrap        = true
+  vim.wo[win].linebreak   = true
+  vim.wo[win].breakindent = true
+end
+
 --- Open a new focused floating window with the given content.
 ---@param lines string[]
----@param footer_text string
+---@param hint_text string
 ---@param width integer
 ---@param state table
 ---@param cfg table float config (border, max_width, max_height)
 ---@return integer win, integer buf
-local function _open(lines, footer_text, width, state, cfg)
+local function _open(lines, hint_text, width, state, cfg)
   local buf = vim.api.nvim_create_buf(false, true)
   vim.bo[buf].buftype   = "nofile"
   vim.bo[buf].bufhidden = "wipe"
@@ -155,6 +237,7 @@ local function _open(lines, footer_text, width, state, cfg)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
   _apply_treesitter(buf)
+  _write_hints(buf, lines, width, hint_text)
 
   local win = vim.api.nvim_open_win(buf, true, {
     relative   = "cursor",
@@ -165,18 +248,11 @@ local function _open(lines, footer_text, width, state, cfg)
     style      = "minimal",
     border     = cfg.border,
     focusable  = true,
-    footer     = { { footer_text, "FloatFooter" } },
-    footer_pos = "left",
   })
-
-  vim.wo[win].wrap = false
+  _apply_wrap(win)
   _apply_conceal(win)
-
-  -- The drawn rows are known only once the window conceals, so the height
-  -- is set after opening. Read-then-write keeps relative and footer_pos.
-  local existing = vim.api.nvim_win_get_config(win)
-  existing.height = _fit_height(win, cfg)
-  vim.api.nvim_win_set_config(win, existing)
+  _fit_window(win, width, cfg)
+  vim.api.nvim_win_set_cursor(win, _start_cursor(lines))
 
   state.float_bufnr = buf
   state.float_winid = win
@@ -185,13 +261,12 @@ local function _open(lines, footer_text, width, state, cfg)
 end
 
 --- Update an existing float in-place without closing and reopening.
---- Uses the read-then-write pattern to avoid dropping footer_pos (NeoVim #31992).
 ---@param lines string[]
----@param footer_text string
+---@param hint_text string
 ---@param width integer
 ---@param state table
 ---@param cfg table
-local function _update(lines, footer_text, width, state, cfg)
+local function _update(lines, hint_text, width, state, cfg)
   local buf = state.float_bufnr
   local win = state.float_winid
 
@@ -202,16 +277,12 @@ local function _update(lines, footer_text, width, state, cfg)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable = false
   _apply_treesitter(buf)
+  _write_hints(buf, lines, width, hint_text)
 
-  -- Read existing config first so relative, footer_pos, etc. are preserved.
-  local existing = vim.api.nvim_win_get_config(win)
-  existing.width  = width
-  existing.height = _fit_height(win, cfg)
-  existing.footer = { { footer_text, "FloatFooter" } }
-  vim.api.nvim_win_set_config(win, existing)
+  _fit_window(win, width, cfg)
 
   -- Reset scroll to top after content change.
-  vim.api.nvim_win_set_cursor(win, { 1, 0 })
+  vim.api.nvim_win_set_cursor(win, _start_cursor(lines))
 end
 
 --- Register CursorMoved and BufLeave autocmds on the source buffer.
@@ -278,6 +349,20 @@ local function _setup_keymaps(bufnr, state, on_expand, on_collapse)
       vim.keymap.set("n", key, function() on_collapse() end, { buffer = bufnr, nowait = true, silent = true })
     end
   end
+
+  -- Plain j and k step onto the hidden fence lines, where a press looks dead.
+  local function step(dir)
+    local win    = state.float_winid
+    local lines  = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local target = _next_visible_line(lines, cursor[1], dir)
+    if target then
+      -- Column 1 is the first character after the padding.
+      vim.api.nvim_win_set_cursor(win, { target, 1 })
+    end
+  end
+  vim.keymap.set("n", "j", function() step(1) end,  { buffer = bufnr, nowait = true, silent = true })
+  vim.keymap.set("n", "k", function() step(-1) end, { buffer = bufnr, nowait = true, silent = true })
 end
 
 --- Open a focused float or update the existing one in-place.
@@ -288,20 +373,20 @@ end
 ---@param on_collapse function|nil callback fired when user presses - inside the float
 function M.show(hover, state, on_expand, on_collapse)
   local cfg   = require("ts_expand_hover.config").get().float
-  local lines = hover.lines
+  local lines = _pad(hover.lines)
 
   -- Store can_expand in state so expand/collapse handlers can read it without
   -- needing a reference to the hover table.
   state.can_expand = hover.can_expand
 
-  local width, footer = _compute_layout(lines, state, cfg)
+  local width, hint = _compute_layout(lines, state, cfg)
 
   if state.float_winid and vim.api.nvim_win_is_valid(state.float_winid) then
-    _update(lines, footer, width, state, cfg)
+    _update(lines, hint, width, state, cfg)
   else
     -- Capture source window before focus moves into the float.
     state.source_winid = vim.api.nvim_get_current_win()
-    local win, buf = _open(lines, footer, width, state, cfg)
+    local win, buf = _open(lines, hint, width, state, cfg)
     _setup_close_autocmds(win, state.source_bufnr, state)
     _setup_keymaps(buf, state, on_expand, on_collapse)
   end

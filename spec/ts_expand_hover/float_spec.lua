@@ -29,6 +29,12 @@ local SUCCESS_HOVER = { lines = { "```typescript", "type Foo = string", "```" },
 -- Stubs table — populated in before_each, reverted in after_each.
 local stubs = {}
 
+-- The hint row is the second virtual line of the extmark written on the last visible line.
+local function hint_text()
+  local extmark_opts = stubs.nvim_buf_set_extmark.calls[1].vals[5]
+  return extmark_opts.virt_lines[2][1][1]
+end
+
 describe("float", function()
 
   before_each(function()
@@ -56,6 +62,8 @@ describe("float", function()
     stubs.nvim_create_autocmd   = stub(vim.api, "nvim_create_autocmd").returns(1)
     stubs.nvim_del_augroup_by_name = stub(vim.api, "nvim_del_augroup_by_name")
     stubs.nvim_win_set_cursor      = stub(vim.api, "nvim_win_set_cursor")
+    stubs.nvim_buf_set_extmark     = stub(vim.api, "nvim_buf_set_extmark").returns(1)
+    stubs.nvim_buf_clear_namespace = stub(vim.api, "nvim_buf_clear_namespace")
     -- Drawn rows as the window reports them; tests about height re-stub this.
     stubs.nvim_win_text_height     = stub(vim.api, "nvim_win_text_height").returns({ all = 20 })
 
@@ -159,9 +167,96 @@ describe("float", function()
 
       float.show(SUCCESS_HOVER, state)
 
-      local set_config_call = stubs.nvim_win_set_config.calls[1]
+      -- First write sets the width, second write sets the measured height.
+      local set_config_call = stubs.nvim_win_set_config.calls[2]
       assert.equals(100, set_config_call.vals[1])
       assert.equals(1, set_config_call.vals[2].height)
+    end)
+
+    it("keeps the full hint row when a content line is wider than max_width", function()
+      config.setup({ float = { max_width = 40 } })
+      local float = fresh_float()
+      local state = new_state({ verbosity = 0 })
+
+      float.show({ lines = { string.rep("x", 100) }, can_expand = true }, state)
+
+      local win_cfg = stubs.nvim_open_win.calls[1].vals[3]
+      assert.equals(40, win_cfg.width)
+      assert.is_truthy(hint_text():find("depth: 0", 1, true))
+      assert.is_truthy(hint_text():find("[q] close", 1, true))
+    end)
+
+    it("draws the hints inside the float as a separator and a hint row under the last visible line", function()
+      local float = fresh_float()
+      local state = new_state()
+
+      float.show(SUCCESS_HOVER, state)
+
+      -- Nothing on the border.
+      assert.is_nil(stubs.nvim_open_win.calls[1].vals[3].footer)
+
+      local extmark_call = stubs.nvim_buf_set_extmark.calls[1]
+      assert.equals(42, extmark_call.vals[1])
+      -- Line 2 (0-indexed 1) is the type line; line 3 is the hidden closing fence.
+      assert.equals(1, extmark_call.vals[3])
+      local virt_lines = extmark_call.vals[5].virt_lines
+      assert.equals("FloatBorder", virt_lines[1][1][2])
+      assert.equals("Comment", virt_lines[2][1][2])
+      assert.equals(" ", hint_text():sub(1, 1))
+    end)
+
+    it("wraps long lines under the padding column", function()
+      local float = fresh_float()
+      local state = new_state()
+
+      float.show(SUCCESS_HOVER, state)
+
+      local set = {}
+      for _, c in ipairs(stubs.nvim_set_option_value.calls) do
+        local opts = c.vals[3] or {}
+        if opts.win == 100 then set[c.vals[1]] = c.vals[2] end
+      end
+      assert.is_true(set.wrap)
+      assert.is_true(set.linebreak)
+      assert.is_true(set.breakindent)
+    end)
+
+    it("starts the cursor on the first visible line, past the padding", function()
+      local float = fresh_float()
+      local state = new_state()
+
+      float.show(SUCCESS_HOVER, state)
+
+      local cursor_call = stubs.nvim_win_set_cursor.calls[1]
+      assert.equals(100, cursor_call.vals[1])
+      -- Line 1 is the hidden fence, line 2 is the type, column 0 is the padding.
+      assert.same({ 2, 1 }, cursor_call.vals[2])
+    end)
+
+    it("j and k skip the hidden fence lines", function()
+      local float = fresh_float()
+      local state = new_state()
+      stubs.nvim_buf_get_lines = stub(vim.api, "nvim_buf_get_lines").returns({
+        " ```typescript", " type Foo = string", " ```", "", " Doc text",
+      })
+      stubs.nvim_win_get_cursor = stub(vim.api, "nvim_win_get_cursor").returns({ 2, 1 })
+
+      float.show(SUCCESS_HOVER, state)
+
+      local handlers = {}
+      for _, c in ipairs(stubs.keymap_set.calls) do
+        handlers[c.vals[2]] = c.vals[3]
+      end
+
+      handlers["j"]()
+      local after_j = stubs.nvim_win_set_cursor.calls[#stubs.nvim_win_set_cursor.calls]
+      assert.same({ 4, 1 }, after_j.vals[2])
+
+      stubs.nvim_win_get_cursor:revert()
+      stubs.nvim_win_get_cursor = stub(vim.api, "nvim_win_get_cursor").returns({ 4, 1 })
+      handlers["k"]()
+      local after_k = stubs.nvim_win_set_cursor.calls[#stubs.nvim_win_set_cursor.calls]
+      assert.same({ 2, 1 }, after_k.vals[2])
     end)
 
     it("respects max_height from config (HOVR-05)", function()
@@ -176,11 +271,11 @@ describe("float", function()
 
       local open_cfg = stubs.nvim_open_win.calls[1].vals[3]
       assert.is_true(open_cfg.height <= 5)
-      local final_cfg = stubs.nvim_win_set_config.calls[1].vals[2]
+      local final_cfg = stubs.nvim_win_set_config.calls[2].vals[2]
       assert.is_true(final_cfg.height <= 5)
     end)
 
-    it("displays footer with depth and key hints (EXPN-04)", function()
+    it("displays the hint row with depth and key hints (EXPN-04)", function()
       local float = fresh_float()
       local state = new_state({ verbosity = 0 })
 
@@ -188,8 +283,7 @@ describe("float", function()
 
       local call_args = stubs.nvim_open_win.calls[1]
       local win_cfg = call_args.vals[3]
-      -- footer is { { text, hl_group } }
-      local footer_text = win_cfg.footer[1][1]
+      local footer_text = hint_text()
       assert.is_truthy(footer_text:find("depth: 0"))
       -- At verbosity 0 with can_expand=true: expand shows [+] expand,
       -- collapse shows [-] (non-functional at_min state per EXPN-06).
@@ -198,19 +292,18 @@ describe("float", function()
       assert.is_truthy(footer_text:find("%[q%] close"))
     end)
 
-    it("footer reflects current verbosity level (EXPN-04)", function()
+    it("hint row reflects current verbosity level (EXPN-04)", function()
       local float = fresh_float()
       local state = new_state({ verbosity = 3 })
 
       float.show(SUCCESS_HOVER, state)
 
       local call_args = stubs.nvim_open_win.calls[1]
-      local win_cfg = call_args.vals[3]
-      local footer_text = win_cfg.footer[1][1]
+      local footer_text = hint_text()
       assert.is_truthy(footer_text:find("depth: 3"))
     end)
 
-    it("footer shows [max] when can_expand is false (EXPN-05)", function()
+    it("hint row shows [max] when can_expand is false (EXPN-05)", function()
       local float = fresh_float()
       local state = new_state({ verbosity = 2 })
       local max_hover = { lines = { "type Foo = string" }, can_expand = false }
@@ -218,13 +311,12 @@ describe("float", function()
       float.show(max_hover, state)
 
       local call_args = stubs.nvim_open_win.calls[1]
-      local win_cfg = call_args.vals[3]
-      local footer_text = win_cfg.footer[1][1]
+      local footer_text = hint_text()
       assert.is_truthy(footer_text:find("%[max%]"))
       assert.is_falsy(footer_text:find("%[%+%] expand"))
     end)
 
-    it("footer shows [-] without collapse label at depth 0 (EXPN-06)", function()
+    it("hint row shows [-] without collapse label at depth 0 (EXPN-06)", function()
       local float = fresh_float()
       -- verbosity = 0 means at_min = true → collapse hint is just [-]
       local state = new_state({ verbosity = 0 })
@@ -232,27 +324,25 @@ describe("float", function()
       float.show(SUCCESS_HOVER, state)
 
       local call_args = stubs.nvim_open_win.calls[1]
-      local win_cfg = call_args.vals[3]
-      local footer_text = win_cfg.footer[1][1]
+      local footer_text = hint_text()
       -- [-] is present (visible but non-functional at min depth)
       assert.is_truthy(footer_text:find("%[%-%]"))
       -- [-] collapse should NOT be present at depth 0
       assert.is_falsy(footer_text:find("%[%-%] collapse"))
     end)
 
-    it("footer shows [-] collapse when verbosity > 0 (EXPN-06)", function()
+    it("hint row shows [-] collapse when verbosity > 0 (EXPN-06)", function()
       local float = fresh_float()
       local state = new_state({ verbosity = 1 })
 
       float.show(SUCCESS_HOVER, state)
 
       local call_args = stubs.nvim_open_win.calls[1]
-      local win_cfg = call_args.vals[3]
-      local footer_text = win_cfg.footer[1][1]
+      local footer_text = hint_text()
       assert.is_truthy(footer_text:find("%[%-%] collapse"))
     end)
 
-    it("widens float so full footer fits when max_width allows it", function()
+    it("widens float so the full hint row fits when max_width allows it", function()
       local float = fresh_float()
       local state = new_state({ verbosity = 2 })
       local short_hover = { lines = { "x" }, can_expand = true }
@@ -260,13 +350,12 @@ describe("float", function()
       float.show(short_hover, state)
 
       local call_args = stubs.nvim_open_win.calls[1]
-      local win_cfg = call_args.vals[3]
-      local footer_text = win_cfg.footer[1][1]
+      local footer_text = hint_text()
       assert.is_truthy(footer_text:find("depth: 2"))
-      assert.is_true(win_cfg.width >= #footer_text)
+      assert.is_true(stubs.nvim_open_win.calls[1].vals[3].width >= #footer_text)
     end)
 
-    it("falls back to compact footer variant when max_width is narrow", function()
+    it("falls back to the compact hint row when max_width is narrow", function()
       config.setup({ float = { max_width = 20 } })
       local float = fresh_float()
       local state = new_state({ verbosity = 1 })
@@ -274,12 +363,11 @@ describe("float", function()
       float.show(SUCCESS_HOVER, state)
 
       local call_args = stubs.nvim_open_win.calls[1]
-      local win_cfg = call_args.vals[3]
-      local footer_text = win_cfg.footer[1][1]
+      local footer_text = hint_text()
       assert.is_truthy(footer_text:find("d:1", 1, true))
       assert.is_falsy(footer_text:find("expand", 1, true))
       assert.is_falsy(footer_text:find("collapse", 1, true))
-      assert.is_true(#footer_text <= win_cfg.width)
+      assert.is_true(#footer_text <= stubs.nvim_open_win.calls[1].vals[3].width)
     end)
 
     it("registers q and Esc keymaps on float buffer (HOVR-04)", function()
@@ -364,7 +452,7 @@ describe("float", function()
       assert.equals("markdown", call_args.vals[2])
     end)
 
-    it("writes the hover lines to the buffer (HOVR-02)", function()
+    it("writes the hover lines to the buffer with one column of padding (HOVR-02)", function()
       local float = fresh_float()
       local state = new_state()
 
@@ -373,7 +461,7 @@ describe("float", function()
       local set_lines_call = stubs.nvim_buf_set_lines.calls[1]
       -- 5th arg is the lines table: bufnr, start, end, strict_indexing, lines
       local lines = set_lines_call.vals[5]
-      assert.same({ "```typescript", "type Foo = string", "```" }, lines)
+      assert.same({ " ```typescript", " type Foo = string", " ```" }, lines)
     end)
 
   end) -- show (new float)
@@ -402,7 +490,7 @@ describe("float", function()
       assert.stub(stubs.nvim_win_set_config).was.called()
     end)
 
-    it("resets scroll to top on in-place update (EXPN-03)", function()
+    it("puts the cursor back on the first visible line after an in-place update (EXPN-03)", function()
       local float = fresh_float()
       -- Simulate an already-open float with winid=100.
       local state = new_state({ float_winid = 100, float_bufnr = 42 })
@@ -414,11 +502,11 @@ describe("float", function()
 
       float.show({ lines = { "type Bar = number" }, can_expand = false }, state)
 
-      -- nvim_win_set_cursor should be called to reset scroll to row 1, col 0.
+      -- The update content has no fence, so line 1 is visible; column 0 is the padding.
       assert.stub(stubs.nvim_win_set_cursor).was.called()
       local cursor_call = stubs.nvim_win_set_cursor.calls[1]
       assert.equals(100, cursor_call.vals[1])
-      assert.same({ 1, 0 }, cursor_call.vals[2])
+      assert.same({ 1, 1 }, cursor_call.vals[2])
     end)
 
   end) -- show (in-place update)
