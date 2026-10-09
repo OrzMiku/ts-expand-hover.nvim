@@ -201,7 +201,7 @@ describe("float", function()
       assert.equals(1, extmark_call.vals[3])
       local virt_lines = extmark_call.vals[5].virt_lines
       assert.equals("FloatBorder", virt_lines[1][1][2])
-      assert.equals("Comment", virt_lines[2][1][2])
+      assert.equals("FloatBorder", virt_lines[2][1][2])
       assert.equals(" ", hint_text():sub(1, 1))
     end)
 

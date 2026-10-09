@@ -111,11 +111,12 @@ end
 local HINT_NS = vim.api.nvim_create_namespace("ts_expand_hover_hints")
 
 --- Draw the hint row as the last two rows inside the float, like the action
---- row at the bottom of the VS Code hover: a separator line in the border
---- colour, then the hints in the comment colour. Virtual lines are not buffer
---- text, so the markdown parser and the cursor never touch them. They hang
---- off the last visible line: a concealed fence line takes its virtual lines
---- down with it.
+--- row at the bottom of the VS Code hover: a separator line and the hints,
+--- both in the border colour so they read as chrome. Comment would be the
+--- other muted choice, but themes often draw it in italics, which looks
+--- bigger than the code. Virtual lines are not buffer text, so the markdown
+--- parser and the cursor never touch them. They hang off the last visible
+--- line: a concealed fence line takes its virtual lines down with it.
 ---@param bufnr integer
 ---@param lines string[]
 ---@param width integer
@@ -126,7 +127,7 @@ local function _write_hints(bufnr, lines, width, hint_text)
   vim.api.nvim_buf_set_extmark(bufnr, HINT_NS, last_visible - 1, 0, {
     virt_lines = {
       { { string.rep("─", width), "FloatBorder" } },
-      { { hint_text, "Comment" } },
+      { { hint_text, "FloatBorder" } },
     },
   })
 end
