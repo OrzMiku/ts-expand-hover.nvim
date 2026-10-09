@@ -62,7 +62,7 @@ Calling `setup()` with no arguments uses all defaults:
 require("ts_expand_hover").setup({
   keymaps = {
     hover    = "K",               -- normal mode key to open hover float
-    expand   = "+",               -- expand type one level (inside float)
+    expand   = "+",               -- expand type one level (inside float); = works too
     collapse = "-",               -- collapse type one level (inside float)
     close    = { "q", "<Esc>" },  -- close float and return to source
   },

@@ -112,7 +112,7 @@ Options ~
 
 `keymaps.expand` (string | false)
   Key to expand the type to the next verbosity level (buffer-local inside
-  the float). Default: `"+"`
+  the float). Default: `"+"`, which also answers to `=` and the numpad plus.
 
 `keymaps.collapse` (string | false)
   Key to collapse the type to the previous verbosity level (buffer-local
