@@ -19,7 +19,8 @@ INTRODUCTION                                    *ts_expand_hover-intro*
 ts-expand-hover.nvim brings TypeScript's expandable type inspection to
 NeoVim. When you press `K` over a TypeScript symbol, the plugin opens a
 focused float showing the type signature. Inside the float you can press `+`
-to expand the type to the next verbosity level and `-` to collapse it back,
+(or `=`, the same key without shift) to expand the type to the next verbosity
+level and `-` to collapse it back,
 replicating the type inspection experience available natively in VS Code.
 
 The plugin talks to one of two servers:
@@ -152,7 +153,7 @@ Default keymaps (all configurable via setup()):
 
   Key         Scope        Action ~
   K           global       Open TypeScript hover float at cursor
-  +           float-local  Expand type (increase verbosity level)
+  +, =        float-local  Expand type (increase verbosity level)
   -           float-local  Collapse type (decrease verbosity level)
   q, <Esc>    float-local  Close the hover float
 

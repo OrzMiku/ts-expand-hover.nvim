@@ -6,7 +6,7 @@ Expandable TypeScript type inspection for NeoVim. Uses TypeScript's `verbosityLe
 
 ## Features
 
-- **Progressive type expansion** — press `+` to expand type aliases one level at a time, `-` to collapse
+- **Progressive type expansion** — press `+` (or `=`, no shift needed) to expand type aliases one level at a time, `-` to collapse
 - **In-place float updates** — content updates without closing or repositioning the float
 - **Treesitter highlighting** — TypeScript code fences are syntax-highlighted via treesitter markdown injection
 - **Documentation and JSDoc** — documentation text and `@param`/`@returns`/`@example` tags rendered below the type block
@@ -98,7 +98,7 @@ vim.api.nvim_create_autocmd("FileType", {
 | Key | Scope | Action |
 |-----|-------|--------|
 | `K` | Normal mode (global) | Open hover float at cursor |
-| `+` | Inside float | Expand type one level |
+| `+` / `=` | Inside float | Expand type one level |
 | `-` | Inside float | Collapse type one level |
 | `q` / `Esc` | Inside float | Close float, return focus to source |
 

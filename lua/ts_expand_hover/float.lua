@@ -247,12 +247,13 @@ end
 ---@param on_collapse function|nil callback for collapse keymap
 local function _setup_keymaps(bufnr, state, on_expand, on_collapse)
   --- Normalize a key config into a list of concrete mappings.
-  --- Supports keypad aliases for default +/- so expand/collapse work with numpad.
+  --- The default + also answers to = (same key without shift) and both
+  --- defaults answer to the numpad keys.
   ---@param key string|string[]
   ---@return string[]
   local function key_list(key)
     if type(key) == "table" then return key end
-    if key == "+" then return { "+", "<kPlus>" } end
+    if key == "+" then return { "+", "=", "<kPlus>" } end
     if key == "-" then return { "-", "<kMinus>" } end
     return { key }
   end
