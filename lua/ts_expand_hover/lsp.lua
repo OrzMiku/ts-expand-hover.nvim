@@ -6,9 +6,6 @@
 
 local M = {}
 
--- Compat shim: vim.lsp.get_active_clients() deprecated in NeoVim 0.10, removed in 0.11.
-local get_clients = vim.lsp.get_clients or vim.lsp.get_active_clients
-
 -- vtsls comes first so a buffer with both servers attached keeps the vtsls
 -- behaviour. "tsgo" is the older nvim-lspconfig name for the TypeScript 7
 -- server, kept for setups that still use it.
@@ -21,7 +18,7 @@ local SERVERS = { "vtsls", "tsc", "tsgo" }
 ---@return string|nil name
 function M.find_client(bufnr)
   for _, name in ipairs(SERVERS) do
-    local client = get_clients({ bufnr = bufnr, name = name })[1]
+    local client = vim.lsp.get_clients({ bufnr = bufnr, name = name })[1]
     if client then return client, name end
   end
   return nil, nil

@@ -3,31 +3,6 @@
 
 local M = {}
 
---- Return display width for text.
----@param text string
----@return integer
-local function _display_width(text)
-  return vim.fn.strdisplaywidth(text)
-end
-
---- Truncate text so display width is <= max_width.
----@param text string
----@param max_width integer
----@return string
-local function _truncate_to_width(text, max_width)
-  if max_width <= 0 then return "" end
-  if _display_width(text) <= max_width then return text end
-  local chars = vim.fn.strchars(text)
-  while chars > 0 do
-    local candidate = vim.fn.strcharpart(text, 0, chars)
-    if _display_width(candidate) <= max_width then
-      return candidate
-    end
-    chars = chars - 1
-  end
-  return ""
-end
-
 --- Build hint row variants ordered from most to least descriptive.
 ---@param state table Session state with verbosity and can_expand fields
 ---@return string[]
@@ -169,15 +144,12 @@ local function _compute_layout(lines, state, cfg)
 
   local chosen_hint = variants[#variants]
   for _, hint in ipairs(variants) do
-    if _display_width(hint) + 1 <= max_width then
+    local hint_width = vim.fn.strdisplaywidth(hint) + 1
+    if hint_width <= max_width then
       chosen_hint = hint
-      width = math.max(width, _display_width(hint) + 1)
+      width = math.max(width, hint_width)
       break
     end
-  end
-
-  if _display_width(chosen_hint) > width then
-    chosen_hint = _truncate_to_width(chosen_hint, width)
   end
 
   return width, chosen_hint
