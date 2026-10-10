@@ -55,13 +55,15 @@ M.check = function()
 
   vim.health.info("vtsls version: " .. (server_info.version or "unknown"))
 
-  -- 3. TypeScript version — defensive parse from server_info.version
-  local ts_version = "unknown"
-  if server_info.version then
-    local extracted = server_info.version:match("typescript/([%d%.]+)")
-    if extracted then ts_version = extracted end
-  end
-  if ts_version ~= "unknown" then
+  -- 3. TypeScript version. vtsls reports its own version, so ask tsserver
+  -- directly: its "status" command answers with the TypeScript version.
+  local params = {
+    command   = "typescript.tsserverRequest",
+    arguments = { "status", {} },
+  }
+  local reply = client:request_sync("workspace/executeCommand", params, 2000)
+  local ts_version = reply and reply.result and reply.result.body and reply.result.body.version
+  if ts_version then
     vim.health.info("TypeScript version: " .. ts_version)
   else
     vim.health.warn("TypeScript version could not be detected", { "Check :LspInfo for server details" })
