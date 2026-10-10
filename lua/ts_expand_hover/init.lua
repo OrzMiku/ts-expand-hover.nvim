@@ -41,60 +41,52 @@ function M.setup(opts)
   return M
 end
 
+local _do_expand, _do_collapse
+
+--- Ask the server for the type at state.verbosity and show the answer.
+--- Each request gets a new generation number; an answer whose number is no
+--- longer the current one belongs to a superseded request and is dropped.
+local function request_hover()
+  state.generation = state.generation + 1
+  local gen = state.generation
+
+  lsp.request({
+    bufnr     = state.source_bufnr,
+    row       = state.source_pos[1],
+    col       = state.source_pos[2],
+    verbosity = state.verbosity,
+    state     = state,
+    callback  = function(hover)
+      vim.schedule(function()
+        if state.generation ~= gen then return end
+        float.show(hover, state, _do_expand, _do_collapse)
+      end)
+    end,
+  })
+end
+
 --- Expand the current type one verbosity level.
 --- Silent no-op when at max expansion or when a request is already in-flight.
-local function _do_expand()
+_do_expand = function()
   -- EXPN-05: silent no-op when the server said the type cannot expand further.
   if not state.can_expand then return end
   -- EXPN-07: drop if a request is already in-flight.
   if state.requesting then return end
 
   state.verbosity = state.verbosity + 1
-  state.generation = state.generation + 1
-  local gen = state.generation
-
-  lsp.request({
-    bufnr     = state.source_bufnr,
-    row       = state.source_pos[1],
-    col       = state.source_pos[2],
-    verbosity = state.verbosity,
-    state     = state,
-    callback  = function(hover)
-      vim.schedule(function()
-        -- Stale response guard: discard if a newer request has completed.
-        if state.generation ~= gen then return end
-        float.show(hover, state, function() _do_expand() end, function() _do_collapse() end)
-      end)
-    end,
-  })
+  request_hover()
 end
 
 --- Collapse the current type one verbosity level.
 --- Silent no-op when already at depth 0 or when a request is already in-flight.
-local function _do_collapse()
+_do_collapse = function()
   -- EXPN-06: silent no-op when verbosity is already at minimum.
   if state.verbosity == 0 then return end
   -- EXPN-07: drop if a request is already in-flight.
   if state.requesting then return end
 
   state.verbosity = state.verbosity - 1
-  state.generation = state.generation + 1
-  local gen = state.generation
-
-  lsp.request({
-    bufnr     = state.source_bufnr,
-    row       = state.source_pos[1],
-    col       = state.source_pos[2],
-    verbosity = state.verbosity,
-    state     = state,
-    callback  = function(hover)
-      vim.schedule(function()
-        -- Stale response guard: discard if a newer request has completed.
-        if state.generation ~= gen then return end
-        float.show(hover, state, function() _do_expand() end, function() _do_collapse() end)
-      end)
-    end,
-  })
+  request_hover()
 end
 
 --- Trigger expandable hover at the current cursor position.
@@ -102,37 +94,16 @@ end
 --- to vim.lsp.buf.hover() when none is attached or the server cannot answer
 --- (COMP-01, COMP-02).
 function M.hover()
-  local bufnr = vim.api.nvim_get_current_buf()
-  -- Capture source context synchronously before the async callback fires.
-  state.source_bufnr = bufnr
+  state.source_bufnr = vim.api.nvim_get_current_buf()
   state.verbosity    = 0
 
   local cursor = vim.api.nvim_win_get_cursor(0)
   -- nvim_win_get_cursor returns { row, col } where row is 1-indexed.
   -- Convert to 0-indexed row; lsp.lua adds 1 back for tsserver.
-  local row = cursor[1] - 1
-  local col = cursor[2] -- already 0-indexed; lsp.lua adds 1 for tsserver
-
   -- Capture position for expand/collapse re-requests targeting the same symbol.
-  state.source_pos = { row, col }
+  state.source_pos = { cursor[1] - 1, cursor[2] }
 
-  state.generation = state.generation + 1
-  local gen = state.generation
-
-  lsp.request({
-    bufnr     = bufnr,
-    row       = row,
-    col       = col,
-    verbosity = state.verbosity,
-    state     = state,
-    callback  = function(hover)
-      vim.schedule(function()
-        -- Stale response guard: discard if a newer hover session has started.
-        if state.generation ~= gen then return end
-        float.show(hover, state, function() _do_expand() end, function() _do_collapse() end)
-      end)
-    end,
-  })
+  request_hover()
 end
 
 return M
