@@ -103,6 +103,11 @@ function M.hover()
   -- Capture position for expand/collapse re-requests targeting the same symbol.
   state.source_pos = { cursor[1] - 1, cursor[2] }
 
+  -- A new hover starts a new session, so a request still in flight no longer
+  -- matters: its answer fails the generation check. Clearing the flag here
+  -- also recovers from a server that died without answering.
+  state.requesting = false
+
   request_hover()
 end
 

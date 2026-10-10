@@ -482,7 +482,10 @@ describe("expand/collapse", function()
       init.hover()
       assert.is_true(state.generation > gen_after_first,
         "second hover must advance the generation counter")
-      -- float.show was called once for the second hover's response.
+      assert.equals(2, call_count,
+        "second hover must send its own request although the first is still in flight")
+      assert.equals(1, float_show_calls,
+        "second hover's response must open the float")
       local show_calls_after_second_hover = float_show_calls
 
       -- Now fire the stale first-session callback.
