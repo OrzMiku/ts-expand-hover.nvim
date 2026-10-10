@@ -1,6 +1,6 @@
 # ts-expand-hover.nvim
 
-![ts-expand-hover demo](https://github.com/nemanjamalesija/ts-expand-hover.nvim/raw/95bccfb/assets/demo.gif)
+![ts-expand-hover demo](https://github.com/nemanjamalesija/ts-expand-hover.nvim/raw/3790bac/assets/demo.gif)
 
 Expandable TypeScript type inspection for NeoVim. Uses TypeScript's `verbosityLevel` hover API to let you progressively expand and collapse type aliases directly inside a hover float. Works with vtsls (TypeScript 5.9+) and with the TypeScript 7 language server (`tsc --lsp`, also known as tsgo).
 
