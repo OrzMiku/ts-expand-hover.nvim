@@ -1,6 +1,6 @@
 # ts-expand-hover.nvim
 
-![ts-expand-hover demo](https://github.com/nemanjamalesija/ts-expand-hover.nvim/raw/71be248/assets/demo.gif)
+![ts-expand-hover demo](https://github.com/nemanjamalesija/ts-expand-hover.nvim/raw/61f34bc/assets/demo.gif)
 
 A TypeScript hover for Neovim where you can expand type aliases in place.
 
