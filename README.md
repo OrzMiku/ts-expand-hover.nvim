@@ -2,29 +2,24 @@
 
 ![ts-expand-hover demo](https://github.com/nemanjamalesija/ts-expand-hover.nvim/raw/71be248/assets/demo.gif)
 
-Expandable TypeScript type inspection for NeoVim. Uses TypeScript's `verbosityLevel` hover API to let you progressively expand and collapse type aliases directly inside a hover float. Works with vtsls (TypeScript 5.9+) and with the TypeScript 7 language server (`tsc --lsp`, also known as tsgo).
+A TypeScript hover for Neovim where you can expand type aliases in place.
 
-## Features
+The normal hover shows `Props` and stops there. With this plugin you open the hover, press `+` and `Props` turns into the object it stands for. Press it again to go one level deeper, `-` to go back. The float stays where it is and just updates its text.
 
-- **Progressive type expansion** — press `+` (or `=`, no shift needed) to expand type aliases one level at a time, `-` to collapse
-- **In-place float updates** — content updates without closing or repositioning the float
-- **Treesitter highlighting** — TypeScript code fences are syntax-highlighted via treesitter markdown injection, with the fence lines hidden and long lines wrapped between words
-- **Documentation and JSDoc** — documentation text and `@param`/`@returns`/`@example` tags rendered below the type block
-- **Configurable keymaps and float** — override or disable any keymap; customize border, max width, max height
-- **Graceful fallback** — falls back to `vim.lsp.buf.hover()` when no supported server is attached or the server cannot answer
-- **Concurrent request guard** — rapid key presses are silently dropped; stale responses are discarded
+It uses the `verbosityLevel` hover option TypeScript added in 5.9. It works with vtsls and with the TypeScript 7 server (`tsc --lsp`, also called tsgo).
 
 ## Requirements
 
-- **NeoVim 0.10+**
-- One TypeScript language server attached to your TypeScript buffers:
-  - **[vtsls](https://github.com/yioneko/vtsls)** v0.2.9+ with **TypeScript 5.9+** (v0.3.0+ recommended — bundles TypeScript 5.9), or
-  - **TypeScript 7** (`tsc --lsp`), the server [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) calls `tsc` (older versions call it `tsgo`). See [TypeScript 7 setup](#typescript-7-setup) — one capability is required.
+- Neovim 0.10 or newer
+- One of these servers attached to your TypeScript buffers:
+  - [vtsls](https://github.com/yioneko/vtsls) 0.2.9 or newer, running TypeScript 5.9 or newer. vtsls 0.3.0 ships with 5.9, so that is the easy route.
+  - The TypeScript 7 server, which [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) calls `tsc` (`tsgo` in older versions). It needs one extra capability, see [TypeScript 7 setup](#typescript-7-setup).
 
 ## Installation
 
+With lazy.nvim:
+
 ```lua
--- lazy.nvim
 {
   "nemanjamalesija/ts-expand-hover.nvim",
   ft = { "typescript", "typescriptreact" },
@@ -34,11 +29,11 @@ Expandable TypeScript type inspection for NeoVim. Uses TypeScript's `verbosityLe
 }
 ```
 
-For other plugin managers, call `require("ts_expand_hover").setup()` after loading.
+With any other plugin manager, call `require("ts_expand_hover").setup()` after the plugin loads.
 
 ## TypeScript 7 setup
 
-The TypeScript 7 server tells the plugin whether a type can expand further only when the client declared the `experimental.hoverVerbosityLevel` capability. Without it, the float opens but `+` does nothing. Add the capability to your `tsc` LSP config (NeoVim 0.11+ shown):
+The TypeScript 7 server only tells the plugin whether a type can expand further if the client declares the `experimental.hoverVerbosityLevel` capability. Without it the float opens, but `+` does nothing. Add it to your `tsc` config (Neovim 0.11+ shown):
 
 ```lua
 -- On older nvim-lspconfig the server is called "tsgo".
@@ -52,36 +47,50 @@ vim.lsp.config("tsc", {
 vim.lsp.enable("tsc")
 ```
 
-TypeScript flags this capability as experimental, so treat TypeScript 7 support as experimental too. `:checkhealth ts_expand_hover` reports whether the capability is declared.
+TypeScript marks this capability as experimental, so support for the TypeScript 7 server is experimental here too.
+
+## Usage
+
+| Key | Where | What it does |
+|-----|-------|--------------|
+| `K` | Normal mode | Open the hover |
+| `+` or `=` | In the float | Expand one level |
+| `-` | In the float | Collapse one level |
+| `q` or `Esc` | In the float | Close the float |
+
+The bottom row of the float shows how deep you are and shows `[max]` when there is nothing left to expand. The float closes when you move the cursor in the source buffer.
+
+Below the type you get the documentation and JSDoc tags (`@param`, `@returns`, `@example`). The type itself is highlighted with treesitter.
+
+If no supported server is attached, or the server returns an error, `K` falls back to the built-in `vim.lsp.buf.hover()`. If both vtsls and the TypeScript 7 server are attached, the plugin uses vtsls.
 
 ## Configuration
 
-Calling `setup()` with no arguments uses all defaults:
+These are the defaults. `setup()` with no arguments gives you exactly this:
 
 ```lua
 require("ts_expand_hover").setup({
   keymaps = {
-    hover    = "K",               -- normal mode key to open hover float
-    expand   = "+",               -- expand type one level (inside float); = works too
-    collapse = "-",               -- collapse type one level (inside float)
-    close    = { "q", "<Esc>" },  -- close float and return to source
+    hover    = "K",
+    expand   = "+",  -- = works too
+    collapse = "-",
+    close    = { "q", "<Esc>" },
   },
   float = {
-    border     = "rounded",   -- "rounded", "single", "double", "none"
+    border     = "rounded",  -- "rounded", "single", "double", "none"
     max_width  = 80,
     max_height = 30,
   },
 })
 ```
 
-Set any keymap to `false` to prevent the plugin from registering it, so you can bind it yourself:
+Set a keymap to `false` and the plugin won't register it. This is handy if something else already uses `K` and you only want the plugin's hover in TypeScript files:
 
 ```lua
 require("ts_expand_hover").setup({
   keymaps = { hover = false },
 })
 
--- TypeScript-only mapping to avoid conflicts with other plugins that map K
 vim.api.nvim_create_autocmd("FileType", {
   pattern = { "typescript", "typescriptreact" },
   callback = function(ev)
@@ -93,61 +102,29 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 ```
 
-## Keymaps
+## Troubleshooting
 
-| Key | Scope | Action |
-|-----|-------|--------|
-| `K` | Normal mode (global) | Open hover float at cursor |
-| `+` / `=` | Inside float | Expand type one level |
-| `-` | Inside float | Collapse type one level |
-| `j` / `k` | Inside float | Move down and up, skipping the hidden code fence lines |
-| `q` / `Esc` | Inside float | Close float, return focus to source |
+Start with `:checkhealth ts_expand_hover`, with a TypeScript file open so the server has attached. It shows your Neovim version, which server is attached and its TypeScript version, and for the TypeScript 7 server whether the capability is declared.
 
-The float closes automatically when you move the cursor in the source buffer. The hint row at the bottom of the float shows the current verbosity depth and the available actions. When maximum expansion is reached, the hint row shows `[max]`.
+You get the standard LSP hover instead of this one: no supported server is attached to the buffer.
 
-## Health check
+`+` does nothing: either the bottom row says `[max]`, vtsls is running a TypeScript older than 5.9, or the TypeScript 7 server is missing the capability from [TypeScript 7 setup](#typescript-7-setup).
 
-Run `:checkhealth ts_expand_hover` to verify your setup: NeoVim version, which server is attached, its TypeScript version, and for the TypeScript 7 server whether the `experimental.hoverVerbosityLevel` capability is declared. Open a TypeScript file first so the server has a chance to attach.
+A type ends in `... N more ...`: the TypeScript 7 server cut it at `maximumHoverLength`. Raise that setting, also shown in [TypeScript 7 setup](#typescript-7-setup).
 
-<details>
-<summary><strong>How it works</strong></summary>
+## How it works
 
-Both servers take a `verbosityLevel` that controls how deeply type aliases are expanded, and answer whether the type can expand further.
+Both servers accept a `verbosityLevel` with the hover request and answer whether the type can expand further. `K` asks for level 0, `+` and `-` ask again one level up or down and the plugin swaps the text in the float.
 
-- **vtsls** — the plugin sends `typescript.tsserverRequest` commands via `workspace/executeCommand`, passing `verbosityLevel` (TypeScript 5.9) to tsserver's `quickinfo` command. The answer carries `canIncreaseVerbosityLevel`.
-- **TypeScript 7** — the plugin sends a plain `textDocument/hover` request with `verbosityLevel` on it. The answer is markdown plus `canIncreaseVerbosity`.
+With vtsls the request goes through `workspace/executeCommand` as a `typescript.tsserverRequest` for tsserver's `quickinfo` command. With the TypeScript 7 server it is a plain `textDocument/hover` request with `verbosityLevel` added.
 
-1. `K` — sends a request with `verbosityLevel: 0`
-2. `+` — increments verbosity and re-requests; the float updates in-place
-3. `-` — decrements verbosity and re-requests
-4. A generation counter discards stale responses from prior hover sessions
-
-When no supported server is attached, or the server answers with an error (TypeScript < 5.9 on vtsls included), the plugin falls back to `vim.lsp.buf.hover()`. When both servers are attached to a buffer, vtsls is used.
-
-</details>
-
-<details>
-<summary><strong>Troubleshooting</strong></summary>
-
-**Hover shows the standard LSP float** — no supported server is attached. Run `:checkhealth ts_expand_hover` and make sure your LSP config starts vtsls or the TypeScript 7 server (`tsc`) for TypeScript files.
-
-**Pressing + does nothing** — the hint row shows `[max]` (fully expanded), TypeScript < 5.9 is in use with vtsls, or the TypeScript 7 server was started without the `experimental.hoverVerbosityLevel` capability (see [TypeScript 7 setup](#typescript-7-setup)).
-
-**Type ends with `... N more ...`** — the TypeScript 7 server cuts long types at `maximumHoverLength` (500 by default). Raise it in the server settings (see [TypeScript 7 setup](#typescript-7-setup)).
-
-**Float doesn't open** — NeoVim 0.10 or newer is required. Also verify `setup()` was called.
-
-**K is already bound** — use a custom hover key (e.g. `hover = "<leader>th"`) or disable the global mapping and remap per-filetype (see Configuration above).
-
-</details>
-
-## Running tests
+## Tests
 
 ```sh
 make test
 ```
 
-Requires NeoVim and [plenary.nvim](https://github.com/nvim-lua/plenary.nvim). Tests run headlessly with no live LSP dependency.
+Needs Neovim and [plenary.nvim](https://github.com/nvim-lua/plenary.nvim). The tests run headless and don't need a language server.
 
 ## License
 
