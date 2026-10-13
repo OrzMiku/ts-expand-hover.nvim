@@ -2,7 +2,7 @@
 
 ![ts-expand-hover demo](https://github.com/nemanjamalesija/ts-expand-hover.nvim/raw/61f34bc/assets/demo.gif)
 
-A TypeScript hover for Neovim where you can expand type aliases in place.
+The expandable type hover from VS Code, for Neovim: a TypeScript hover where you expand type aliases in place.
 
 The normal hover shows `Props` and stops there. With this plugin you open the hover, press `+` and `Props` turns into the object it stands for. Press it again to go one level deeper, `-` to go back. The float stays where it is and just updates its text.
 
