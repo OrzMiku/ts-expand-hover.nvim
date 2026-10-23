@@ -9,7 +9,7 @@ local M = {}
 -- vtsls comes first so a buffer with both servers attached keeps the vtsls
 -- behaviour. "tsgo" is the older nvim-lspconfig name for the TypeScript 7
 -- server, kept for setups that still use it.
-local SERVERS = { "vtsls", "tsc", "tsgo" }
+local SERVERS = { "vtsls", "tsc", "tsgo", "tsrs" }
 
 --- Find the first supported client, attached to the given buffer or, when
 --- bufnr is nil, to any buffer.
